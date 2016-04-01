@@ -1,0 +1,137 @@
+---
+title: "Assignment in PLM Module"
+author: "Amarnath Mishra"
+date: "April 1, 2016"
+output: html_document
+---
+
+Analysis
+=========
+
+##Summary
+
+1) Loading the data and understanding the data
+2) Use cross-validation to make a valid model - 70% of data for model training  and rest 30% for model testing 
+3) Cleaning data by removing non-explanatory variables and those with little information about the output variable 
+4) Applying PCA to remove no. of variables
+5) Applying Random Forest to build a model
+6) Checking the model with test dataset
+7) Apply model to test classes of 20 observations
+
+
+##Loading the data 
+```{r loadData, echo=TRUE}
+
+dat <- read.csv("pml-training.csv")
+#colnames(dat)
+#summary(dat)
+
+#The summary output is hidden due to the size of the dataset, here it is reported in the code to allow reproduction
+
+```
+
+##Cross validation
+
+```{r crossValidation, echo=TRUE}
+#70% of the training data to be used for building the model and rest for validating it
+
+library(caret)
+
+set.seed(2222)
+
+inTrain <- createDataPartition(y=dat$classe, p=0.7,list=FALSE)
+
+training <- dat[inTrain,]
+
+testing <- dat[-inTrain,]
+
+```
+
+##Cleaning the training data
+
+```{r cleaningData, echo=TRUE}
+
+#We will exclude identifier, timestamp, and window data (such data cannot be used for prediction as they are mostly used for data acquisition)
+Cl <- grep("name|timestamp|window|X", colnames(training), value=F) 
+trainingCl <- training[,-Cl]
+
+#select variables with high (over 95%) missing data and exclude them from the analysis
+trainingCl[trainingCl==""] <- NA
+NArate <- apply(trainingCl, 2, function(x) sum(is.na(x)))/nrow(trainingCl)
+trainingCl <- trainingCl[!(NArate>0.95)]
+#summary(trainingCl)
+
+#Again, the summary output is hidden due to sheer size of the training data set, even the cleaned one
+
+```
+
+##PCA
+
+####To further remove no. of variables, PCA is applied
+
+```{r pca, echo=TRUE}
+
+prProc <- preProcess(trainingCl[,1:52],method="pca",thresh=0.8) #12 components are needed
+
+prProc <- preProcess(trainingCl[,1:52],method="pca",thresh=0.9) #18 components are needed
+
+prProc <- preProcess(trainingCl[,1:52],method="pca",thresh=0.95) #25 components to describe 95% of variance
+
+prProc <- preProcess(trainingCl[,1:52],method="pca",preComp=25)
+
+trainingPc <- predict(prProc,trainingCl[,1:52])
+
+```
+
+##Random Forest
+
+####For non-binomial outcome & large sample size
+
+```{r randomForest, echo=TRUE}
+
+library(randomForest)
+
+modFitRf <- randomForest(trainingCl$classe~.,data=trainingPc,do.trace=F)
+
+print(modFitRf)  #Let's view the results of this fitted-model
+
+importance(modFitRf)  #Importance of the predictor variables
+
+```
+
+##Checking in the test set
+
+```{r testingCheck, echo=TRUE}
+
+testingCl <- testing[,-Cl] #Removing identifier, timestamp, and window data 
+
+#select variables with high (over 95%) missing data and exclude them from the analysis
+testingCl[testingCl==""] <- NA
+NArate <- apply(testingCl, 2, function(x) sum(is.na(x)))/nrow(testingCl)
+testingCl <- testingCl[!(NArate>0.95)]
+
+#PCA applied
+testingPC <- predict(prProc,testingCl[,1:52])
+
+#Predicting the outcome with Random Forest method
+confusionMatrix(testingCl$classe,predict(modFitRf,testingPC))
+
+```
+
+##Predicting class of 20 test data
+
+```{r predictionTestData, echo=TRUE}
+testdata <- read.csv("pml-testing.csv")
+testdataCl <- testdata[,-Cl]
+testdataCl[testdataCl==""] <- NA
+NArate <- apply(testdataCl, 2, function(x) sum(is.na(x)))/nrow(testdataCl)
+testdataCl <- testdataCl[!(NArate>0.95)]
+testdataPC <- predict(prProc,testdataCl[,1:52])
+testdataCl$classe <- predict(modFitRf,testdataPC)
+
+testdataCl$classe
+```
+
+##Discussion
+
+#### The model statistics showed that the built model had the overall accuracy of 97% for the testing set, which is not overlapping with observations used to built the model. The sensitivity was in between 94%-99% and the specificity was over 99% for all classes (class A-E, total 5 classes. class A is the data from correct exercise while the other classes were data from exercises done in a wrong way). Overall, the model is well developed to predict the exercise classes during weight lifting. 
